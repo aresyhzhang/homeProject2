@@ -1,5 +1,6 @@
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.{SparkConf, SparkContext}
 import org.elasticsearch.spark.rdd.EsSpark
 import org.elasticsearch.spark.sparkContextFunctions
@@ -28,22 +29,10 @@ object ES2Hive {
     conf.set("index.mapper.dynamic","false")
     val sc=new SparkContext(conf)
 
-//      import org.elasticsearch.spark.sql._
-//      val options = Map(
-//          "es.nodes.wan.only" -> "true",
-//          "es.nodes" -> "29.29.29.29:10008,29.29.29.29:10009",
-//          "es.port" -> "9200",
-//          "es.read.field.as.array.include" -> "arr1, arr2"
-//      )
-//
-//      val df = sc
-//        .read
-//        .format("es")
-//        .options(options)
-//        .load("index1/info")
-//      df.show()
 
-//    val readRdd=sc.esRDD("index/type")  //读取
+
+      val spark = SparkSession.builder().appName("RddToDataFrame").master("local").getOrCreate()
+
     val query =
       s"""
          |{
@@ -53,7 +42,21 @@ object ES2Hive {
        """
         .stripMargin
     //这里的索引类型要与ES中的 【_index,_type】一致，不然会报错
+
+
     val data: RDD[(String, collection.Map[String, AnyRef])] = EsSpark.esRDD(sc,"test/testtype")
+
+      val schema = StructType(
+          Seq(
+              StructField("name",StringType,true)
+              ,StructField("age",IntegerType,true)
+          )
+      )
+
+      val rowRDD = sparkSession.sparkContext
+        .textFile("/tmp/people.txt",2)
+        .map( x => x.split(",")).map( x => Row(x(0),x(1).trim().toInt))
+      sc.createDataFrame(data,schema)
 
       data.foreach(println(_));
 //    data.collect().foreach(println(_));
