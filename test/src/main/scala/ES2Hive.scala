@@ -8,222 +8,173 @@ import org.apache.spark.sql.types._
 import org.apache.spark.{SparkConf, SparkContext}
 import org.elasticsearch.spark.rdd.EsSpark
 import org.elasticsearch.spark.sparkContextFunctions
+import org.elasticsearch.spark.sql._
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+import scala.util.control.Breaks._
 
 object ES2Hive {
 
   def main(args: Array[String]): Unit = {
-
+    //配置hadoop的环境变量,本地需要设置,线上不需要,在c盘的myconf目录下bin目录下放winUtils,下个hadoop.dll放到C:\Windows\System32
     System.setProperty("hadoop.home.dir","E:\\myconf")
 
-//    Logger.getLogger("org.apache.spark").setLevel(Level.OFF)
-//    Logger.getLogger("org.apache.hadoop").setLevel(Level.OFF)
+    /**
+     * 需要解决的问题：
+     * 1.es的字段和hive的字段不一致，全部都不一致，还是先不读es的元数据，采用手动填写的方式吧
+     * 2.es中的类型可能也和hive中的类型不一致,将会按照配置的es字段顺序和hive字段顺序去写入到es中。
+     */
+    //设置日志级别
+    //        Logger.getLogger("org.apache.spark").setLevel(Level.OFF)
+    //        Logger.getLogger("org.apache.hadoop").setLevel(Level.OFF)
+    //
+    //创建spark上下文
     val conf: SparkConf = new SparkConf().setMaster("local[1]").setAppName("test")
-//    conf.set("cluster.name", "name")
     conf.set("es.nodes", "192.168.126.129")
     conf.set("es.port", "9200")
-    conf.set("es.scroll.size", "10000")
+    conf.set("es.scroll.size", "10000") //滑动大小
     conf.set("spark.broadcast.compress", "true") // 设置广播压缩
     conf.set("spark.rdd.compress", "true") // 设置RDD压缩
     conf.set("spark.io.compression.codec", "org.apache.spark.io.LZFCompressionCodec")
     conf.set("spark.shuffle.file.buffer", "1280k")
     conf.set("spark.reducer.maxSizeInFlight", "1024m")
-    conf.set("spark.es.nodes.wan.only", "true")
+    conf.set("spark.es.nodes.wan.only", "false")
     conf.set("spark.reducer.maxMblnFlight", "1024m")
     conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
     conf.set("index.mapper.dynamic","false")
-//    conf.set("hive.metastore.uris","thrift://192.168.126.129:9083")
     val sc=new SparkContext(conf)
+    //创建spark上下文
     val spark = SparkSession.builder().appName("RddToDataFrame")
+      //
       .master("local")
-      .config("hive.metastore.uris","thrift://192.168.126.129:9083")
-      .config("fs.defaultFS","hdfs://192.168.126.129:9000/")
-      .enableHiveSupport()
+      /*    .config("hive.metastore.uris","thrift://192.168.1.102:9083") //设置hive元数据库的地址
+          .config("fs.defaultFS","hdfs://hadoop102:8020") //设置hdfs  nameNode的地址
+          .config("hive.exec.dynamici.partition",true)
+          .config("hive.exec.dynamic.partition.mode","nonstrict")*/
+//          .enableHiveSupport()
       .getOrCreate()
 
+    //需要提取的es的字段
+    val esColumnList="first_name string,createdtime long,maptest.id string,maptest.name string"
+    //需要写入的hive的字段
+    val hiveColumnList="first_name string,createdtime long,id string,name string"
+    //可以忽略map
+    val hiveTableName="index2"  //hive表的名称
+    val es2HivePartitionName="ctime"  //分区字段
+    val es2HivePartitionFormatter="timestamp"  //分区字段的日期格式
+    val hivePartitionName="dt"  //hive中的分区字段
+    val hivePartitionFormatter="yyyy-MM-dd"  //设置hive分区的日期格式
+    val esIndexName="test"  //hive中的分区字段
+    val esTypeName="testtype"  //hive中的分区字段
+    //从args把参数传入
+    val loadFilePath= "es2hive/estest2hivetest.txt"
 
 
+    //根据给定的hive字段构建schema
 
+    val hiveColumnArray: Array[String] = hiveColumnList.split(',')
+    val esColumnArray: Array[String] = esColumnList.split(',')
+    val hiveStructTypeArray: ArrayBuffer[StructField] = ArrayBuffer[StructField]()
+    //用来保存hive的字段名为一个map，后续遍历es时往里面填充数据 [esA,(hiveA,String,Integer)]
+    val esMappingHiveNameMap = new mutable.LinkedHashMap[String, (String, String, String)]()
+    val hiveDataMap = new mutable.LinkedHashMap[AnyRef, AnyRef]()
 
+    //需要写入的hive的字段，两个数组的长度必须一样才行
+    if(esColumnArray.length!=hiveColumnArray.length)throw new RuntimeException("esColumnList do not match hiveColumnList,Please check and try again")
 
-    val query =
-      s"""
-         |{
-         |    "query":{"match_all":{}},
-         |    "_source":["first_name"]  //chatMessages是所需查询的字段，貌似没啥用
-         |}
-       """
-        .stripMargin
-    //这里的索引类型要与ES中的 【_index,_type】一致，不然会报错
-
-    //id string,buffer(payment string,name string),
-//    val columnList="id string,order map(payment string,name string)"
-    val columnList="first_name string,createdtime long,maptest map(id string|name string)"
-    val explodeMap=true
-    val hiveTableName="test_table"
-    val partitionField="createdtime"
-    val dateFormatter="timestamp"
-    val partitionDateFormatter="yyyy-MM-dd"
-    val hivePartitionName="dt"
-
-
-//    if(columnList.contains("map(")){
-//      if(explodeMap){
-//        val array: Array[String] = mapType.split('|')
-//        for (elem <- array) {
-//          addStructType(elem.split(" ")(0),elem.split(" ")(1),structTypeArray)
-//        }
-//    }
-
-    val columnArray: Array[String] = columnList.split(',')
-    val structTypeArray: ArrayBuffer[StructField] = ArrayBuffer[StructField]()
-
-    //用来存数据的key
-    val resultMap = new mutable.LinkedHashMap[AnyRef, AnyRef]()
-
-    for (elem <- columnArray) {
-      val elemArray: Array[String] = elem.split(" ")
-      val columnName: String = elemArray(0)
-      val columnType: String = elemArray(1)
-      //处理特殊map类型
-      if(columnType.contains("map")){
-        val mapType: String = elem.split('(').last.dropRight(1)
-        if(explodeMap){
-          val array: Array[String] = mapType.split('|')
-          for (elem <- array) {
-            val mapArray: Array[String] = elem.split(" ")
-            val mapKey: String = mapArray(0)
-            val mapValue: String = mapArray(1)
-            addStructType(mapKey,mapValue,structTypeArray)
-            resultMap.put(mapKey,mapValue)
-          }
-        }else{
-          addStructType(columnName,"string",structTypeArray)
-          resultMap.put(columnName,null)
-        }
-      }else{
-        resultMap.put(columnName,null)
-        addStructType(columnName,columnType,structTypeArray)
-      }
+    //同时开始遍历es和hive的列格式
+     for(i <- hiveColumnArray.indices) {
+     val hiveArray: Array[String] = hiveColumnArray(i).split(" ")
+     val esArray: Array[String] = esColumnArray(i).split(" ")
+     val hiveColumnName: String = hiveArray(0)
+     val hiveColumnType: String = hiveArray(1)
+     val esColumnName: String = esArray(0)
+     val esColumnType: String = esArray(1)
+     //用hive的列名和类型构建StructType,后面转成dataframe使用
+     addStructType(hiveColumnName,hiveColumnType,hiveStructTypeArray)
+     esMappingHiveNameMap.put(esColumnName,Tuple3(hiveColumnName,hiveColumnType,esColumnType))
+       hiveDataMap.put(hiveColumnName,null)
     }
 
-    def  addStructType(inputName:String,inputType:String,inputArr: ArrayBuffer[StructField],isNull:Boolean=true)={
+    def  addStructType(inputName:String,inputType:String,inputArr: ArrayBuffer[StructField],isNull:Boolean=true): Unit ={
       inputType match {
-         case "string"=>inputArr.append(StructField(inputName,StringType,isNull))
-         case "int"=>inputArr.append(StructField(inputName,IntegerType,isNull))
-         case "long"=>inputArr.append(StructField(inputName,LongType,isNull))
-         case "double"=>inputArr.append(StructField(inputName,DoubleType,isNull))
-         case "float"=>inputArr.append(StructField(inputName,FloatType,isNull))
-         case "boolean"=>inputArr.append(StructField(inputName,BooleanType,isNull))
-         case _=>inputArr.append(StructField(inputName,StringType,isNull))
-       }
-    }
-
-
-    //需要处理给定的字段很多，但是es部分字段缺失的情况。
-
-    //rdd - df - ds
-    val data: RDD[(String, collection.Map[String, AnyRef])] = EsSpark.esRDD(sc,"test/testtype")
-
-    //构建schema
-    structTypeArray.append(StructField(hivePartitionName,StringType,nullable = true))
-    val schema: StructType = StructType(structTypeArray)
-
-    val mapRdd = data.map({ x => {
-      val id = x._1
-      val value: collection.Map[String, AnyRef] = x._2
-
-      //使用LinkedHashMap来存储
-      val map1: mutable.LinkedHashMap[AnyRef, AnyRef] = resultMap.clone()
-
-      val array = new ArrayBuffer[AnyRef]()
-
-      var partitionValue=""
-      for (elem <- value)
-      {
-        val columnName = elem._1
-        val columnValue = elem._2
-
-        //获取hive分区字段值
-        if(columnName.equalsIgnoreCase(partitionField)){
-          partitionValue = dateFormatter match {
-            case "timestamp" => TimeUtils.timestampToString(columnValue.asInstanceOf[Long], partitionDateFormatter)
-            case _ => TimeUtils.stringToString(columnValue.asInstanceOf[String], partitionDateFormatter)
-          }
-          map1.put(hivePartitionName,partitionValue)
-        }
-//        if(columnValue.getClass.getName.contains("collection")){
-        columnValue match {
-          case list: Seq[AnyRef] =>
-            for (elem <- list) {
-              val map: mutable.LinkedHashMap[AnyRef, AnyRef] = elem.asInstanceOf[mutable.LinkedHashMap[AnyRef, AnyRef]]
-              //判断是否炸开map，否则将map转为单个字符串存入
-              if(explodeMap){
-                for (elem <- map) {
-                  map1.put(elem._1,elem._2)
-                  array.append(elem._2)
-                }
-              }else{
-                //不炸开map会把map单独作为一个json字符串写入数据库
-                println(map.toString())
-//                val str: String = JSON.toJSONString(map)
-//                println(str)
-              }
-
-            }
-
-            //非map类型正常处理
-          case _ => {
-            map1.put(columnName,columnValue)
-            array.append(columnValue)
-          }
-
-        }
+        case "string"=>inputArr.append(StructField(inputName,StringType,isNull))
+        case "int"=>inputArr.append(StructField(inputName,IntegerType,isNull))
+        case "long"=>inputArr.append(StructField(inputName,LongType,isNull))
+        case "double"=>inputArr.append(StructField(inputName,DoubleType,isNull))
+        case "float"=>inputArr.append(StructField(inputName,FloatType,isNull))
+        case "boolean"=>inputArr.append(StructField(inputName,BooleanType,isNull))
+        case _=>inputArr.append(StructField(inputName,StringType,isNull))
       }
-      //追加分区字段
-      array.append(partitionValue)
-      val array1: Array[AnyRef] = map1.values.toArray
-      val row1: Row = Row.fromSeq(array1)
-      row1
-//      println()
-
-//      val row: Row = Row.fromSeq(array)
-//      row
     }
-    })
 
-  mapRdd.foreach(println(_))
+    //构建hive表的schema
+    //构建schema
+    hiveStructTypeArray.append(StructField(hivePartitionName,StringType,nullable = true))
+    val hiveTableSchema: StructType = StructType(hiveStructTypeArray)
 
-    val df: DataFrame = spark
-      .createDataFrame(mapRdd, schema)
-
-   df.write.mode("append").insertInto(hiveTableName)
-
-
-    df.show()
+    //从es中读取数据
+    val esDataRDD: RDD[(String, collection.Map[String, AnyRef])] = EsSpark.esRDD(sc,esIndexName+"/"+esTypeName)
 
 
-//    mapRdd.foreach(println(_))
+    val mapRdd = esDataRDD.map(
+      { esData: (String, collection.Map[String, AnyRef]) => {
+        val esValue: collection.Map[String, AnyRef] = esData._2
+        //把之前准备好的数据格式clone来使用
+        val es2HiveNameMap: mutable.LinkedHashMap[String, (String, String, String)] = esMappingHiveNameMap.clone()
+        val hiveValueMap: mutable.LinkedHashMap[AnyRef, AnyRef] = hiveDataMap.clone()
 
-    //      data.foreach(println(_));
-    //    data.collect().foreach(println(_));
+        //针对hive的数据进行填充
+        for (elem <- esValue) {
 
-    //    EsSpark.saveToEs(read,"index1/type1",Map("es.mapping.id" -> "id")) //写入
+          val esColumnName: String = elem._1
+          val esColumnValue: AnyRef = elem._2
+          //开始处理es中集合类型的数据
 
+          if (esColumnValue.isInstanceOf[Seq[AnyRef]]) {
+            val jsonMap: mutable.LinkedHashMap[AnyRef, AnyRef] = elem.asInstanceOf[mutable.LinkedHashMap[AnyRef, AnyRef]]
+            for (json <- jsonMap) {
+              //es2HiveNameMap(maptest.a)
+              val hiveName: String = es2HiveNameMap(esColumnName + "." + json._1)._1
+              hiveValueMap.put(hiveName, json._2)
+            }
+          }
+          //如果es的字段名=hive的分区字段名，就要去当前字段的值作为hive分区字段的值
+          else if (esColumnName.equalsIgnoreCase(es2HivePartitionName)) {
+            val partitionValue: String = es2HivePartitionFormatter match {
+              case "timestamp" => TimeUtils.timestampToString(esColumnValue.asInstanceOf[Long], es2HivePartitionFormatter)
+              case _ => TimeUtils.stringToString(esColumnValue.asInstanceOf[String], es2HivePartitionFormatter)
+            }
+            //获取hive分区字段值
+            hiveValueMap.put(hivePartitionName, partitionValue)
+          }
 
-//
-//      val rowRDD = sparkSession.sparkContext
-//        .textFile("/tmp/people.txt",2)
-//        .map( x => x.split(",")).map( x => Row(x(0),x(1).trim().toInt))
-//      sc.createDataFrame(data,schema)
+          else {
+            //处理es中基本类型的数据
+            val hiveColumnName: String = es2HiveNameMap(esColumnName)._1
+            hiveValueMap.put(hiveColumnName, esColumnValue)
+          }
 
+        }
 
-//      data.foreach(println(_));
-//    data.collect().foreach(println(_));
+//        val array: Seq[AnyRef] = hiveValueMap.values.toArray
+//        val row: Row = Row.fromSeq(array)
+//        row
+        hiveValueMap.values.toArray
+      }
 
-//    EsSpark.saveToEs(read,"index1/type1",Map("es.mapping.id" -> "id")) //写入
+      }
+
+    )
+
+    mapRdd.foreach(println(_))
+//    val df: DataFrame = spark
+//      .createDataFrame(mapRdd, hiveTableSchema)
+    //   df.write.mode("append").insertInto(hiveTableName)
+
+//    df.show()
+
     sc.stop()
 
   }
