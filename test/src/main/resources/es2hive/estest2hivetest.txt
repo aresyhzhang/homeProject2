@@ -1,7 +1,0 @@
-columnList="name string,ctime long"
-explodeMap=true  //是否将上面的map进行拆分
-hiveTableName="index2"  //hive表的名称
-partitionField="ctime"  //分区字段
-dateFormatter="timestamp"  //分区字段的日期格式
-partitionDateFormatter="yyyy-MM-dd"  //设置分区的日期格式
-hivePartitionName="dt"  //hive中的分区字段
