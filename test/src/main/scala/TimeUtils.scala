@@ -1,41 +1,54 @@
 import java.sql.Timestamp
 import java.text.SimpleDateFormat
-import java.util.Date
+import java.util.{Calendar, Date}
 
 object TimeUtils {
   /**
     *
     * @param timestamp 传入的时间戳，单位毫秒
-    * @param format
+    * @param format 输出日期格式
     * @return 默认返回"yyyy-MM-dd HH:mm:ss" 的时间字符串
     */
   def timestampToString(timestamp: Long, format: String = "yyyy-MM-dd HH:mm:ss"): String = {
     val timeFormat = new SimpleDateFormat(format)
-    val timeStr = timeFormat.format(new Date(timestamp))
+    val timeStr: String = timeFormat.format(new Date(timestamp))
     timeStr
   }
 
   /**
     *
-    * @param timeStr 传入"yyyy-MM-dd HH:mm:ss"的字符串格式
-    * @param format
+    * @param timeStr 日期
+    * @param format 输入日期格式
     * @return 返回时间戳，单位：毫秒
     */
-  def stringToTimestamp(timeStr: String, format: String = "yyyy-MM-dd HH:mm:ss") = {
+  def stringToTimestamp(timeStr: String, format: String = "yyyy-MM-dd HH:mm:ss"): Long = {
     val timeFormat = new SimpleDateFormat(format)
-    val timestamp = timeFormat.parse(timeStr).getTime
+    val timestamp: Long = timeFormat.parse(timeStr).getTime
     timestamp
   }
 
   /**
    *
-   * @param timeStr 传入"yyyy-MM-dd HH:mm:ss"的字符串格式
-   * @param format
+   * @param timeStr 日期
+   * @param format 输入格式
+   * @param outFormat 输出格式
    * @return 返回时间戳，单位：毫秒
    */
-  def stringToString(timeStr: String, format: String = "yyyy-MM-dd HH:mm:ss",outFormat:String="yyyy-MM-dd HH:mm:ss") = {
+  def stringToString(timeStr: String, format: String = "yyyy-MM-dd HH:mm:ss",outFormat:String="yyyy-MM-dd HH:mm:ss"): String = {
     val inputTimeStamp: Long = stringToTimestamp(timeStr)
     timestampToString(inputTimeStamp,outFormat)
   }
+
+  /**
+   * @return 获取前天0点时间戳
+   */
+  def getBeforeYesterdayZeroTime(): Long ={
+    val cal = Calendar.getInstance
+    cal.add(Calendar.DATE, -2)
+    val time = cal.getTime
+    stringToTimestamp(new SimpleDateFormat("yyyy-MM-dd").format(time) + " 00:00:00")
+  }
+
+
 
 }

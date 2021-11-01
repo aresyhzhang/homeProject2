@@ -1,4 +1,8 @@
 import java.io.InputStream
+import java.text.SimpleDateFormat
+import java.util.{Calendar, Date}
+
+import TimeUtils.stringToTimestamp
 
 import scala.collection.mutable.ArrayBuffer
 import scala.util.matching.Regex
@@ -16,12 +20,20 @@ object test {
 //      println(lines.next())
 //    }
 //    println(lines)
+//
+//    val ints = new ArrayBuffer[Int]()
+//    ints.append(1)
+//    runByName(ints)
+//    runbyValue(ints)
+//    println(ints.mkString(","))
 
-    val ints = new ArrayBuffer[Int]()
-    ints.append(1)
-    runByName(ints)
-    runbyValue(ints)
-    println(ints.mkString(","))
+    val cal = Calendar.getInstance
+    cal.add(Calendar.DATE, -1)
+    val time: Date = cal.getTime
+    println(new SimpleDateFormat("yyyy-MM-dd").format(time))
+    println(stringToTimestamp(new SimpleDateFormat("yyyy-MM-dd").format(time) + " 00:00:00"))
+    println(stringToTimestamp(new SimpleDateFormat("yyyy-MM-dd").format(time) + " 00:00:00")+86400000)
+    println(time)
 
   }
 
