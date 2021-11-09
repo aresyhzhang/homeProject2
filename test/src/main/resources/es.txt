@@ -66,12 +66,71 @@ PUT /test/_doc/1
   ]
 }
 
+PUT /test/_doc/1
+{
+  "id":"id1",
+  "age":23,
+  "name":"zyh",
+  "createdtime" : 1635768264000,
+  "maptest": [
+    {
+      "a1" : {
+        "a1son":"aaaaaaa"
+      },
+      "a2" : 111
+    },
+    {
+      "b1" : {
+        "b11son":"bbbbbb"
+      },
+      "b2" : 222
+    }
+  ]
+}
+
+PUT /test/_doc/1
+{
+  "id":"id1",
+  "age":23,
+  "name":"zyh",
+  "createdtime" : 1635768264000,
+  "maptest1": [
+    {
+      "v1" : {
+        "v1son":"1118"
+      },
+      "v2" : 1118
+    },
+    {
+      "v1" : {
+        "v1son":"2228"
+      },
+      "v2" : 2228
+    }
+  ],
+    "maptest2": [
+    {
+      "v1" : {
+        "v1son":"1118"
+      },
+      "v2" : 1118
+    },
+    {
+      "v1" : {
+        "v1son":"2228"
+      },
+      "v2" : 2228
+    }
+  ]
+}
+
+
 PUT /test/_doc/2
 {
   "id":"id2",
   "age":23,
   "name":"zyh",
-  "createdtime" : 1635595464000,
+  "createdtime" : 1636458119000,
   "maptest": [
     {
       "v1" : {
@@ -90,6 +149,12 @@ PUT /test/_doc/3
   "createdtime" : 1635681864000,
   "maptest": [
     {
+      "v1" : {
+        "v1son":"8888"
+      },
+      "v2" : 9999
+    },
+     {
       "v1" : {
         "v1son":"8888"
       },

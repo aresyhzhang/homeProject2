@@ -1,9 +1,10 @@
-package com.dtyunxi.saas.service
+//package com.dtyunxi.saas.service
 import java.text.SimpleDateFormat
 import java.util.Properties
 
 import com.alibaba.fastjson.{JSONArray, JSONObject}
-import com.dtyunxi.saas.util.{PropertyUtils, TimeUtils}
+
+//import com.dtyunxi.saas.util.{PropertyUtils, TimeUtils}
 import org.apache.log4j.LogManager
 import org.apache.log4j.Logger
 import org.apache.spark.rdd.RDD
@@ -15,7 +16,20 @@ import org.elasticsearch.spark.rdd.EsSpark
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-object ES2Hive {
+object ES2Hiveback {
+  //暂时不支持从es的list结构中选取时间字段来当做hive的分区字段
+  /**
+   * 需要解决的问题：
+   * 1.es的字段和hive的字段不一致，全部都不一致，还是先不读es的元数据，采用手动填写的方式吧
+   * 2.es中的类型可能也和hive中的类型不一致,将会按照配置的es字段顺序和hive字段顺序去写入到es中。
+   * 1.做日增 ok
+   * 2.要传多个配置文件 ok
+   * 3.分区时间处理 ok
+   * 4.处理类型不匹配 ok
+   * 解决嵌套中有嵌套 ok
+   * 两个es往一个hive写
+   */
+
   //  Logger.getLogger("org.apache.spark").setLevel(Level.OFF)
   //  Logger.getLogger("org.apache.hadoop").setLevel(Level.OFF)
   //
@@ -26,6 +40,7 @@ object ES2Hive {
     //配置hadoop的环境变量,本地需要设置,线上不需要,在c盘的myconf目录下bin目录下放winUtils,下个hadoop.dll放到C:\Windows\System32
     //    System.setProperty("hadoop.home.dir", "E:\\myconf")
     println("scala main args is:"+args.mkString(","))
+
     val esPropMap = new mutable.HashMap[String, String]()
     esPropMap.put("hiveDataBase",args(0))
     esPropMap.put("esNodes",args(2).split(":").head)
@@ -53,13 +68,17 @@ object ES2Hive {
       val df: DataFrame = spark
         .createDataFrame(esRDD, schemaTuple._1)
       df.show(10,false)
-      df.write.mode(properties.getProperty("saveMode")).insertInto(properties.getProperty("hiveTableName"))
     }
+
+//    df.write.mode(properties.getProperty("saveMode")).insertInto(properties.getProperty("hiveTableName"))
     sc.stop()
   }
 
   def init(esPropMap:mutable.HashMap[String, String]): SparkSession = {
     val config = new SparkConf()
+//    config.set("spark.es.nodes.wan.only", "false")
+//    config.set("spark.es.nodes.wan.only", "true")
+//    config.set("es.nodes", "172.21.1.146")
     config.set("es.nodes",esPropMap.get("esNodes").get)
     config.set("es.port",esPropMap.get("esPort").get)
     config.set("es.scroll.size", "10000") //滑动大小*/
@@ -68,15 +87,17 @@ object ES2Hive {
     config.set("spark.io.compression.codec", "org.apache.spark.io.LZFCompressionCodec")
     config.set("spark.shuffle.file.buffer", "1280k")
     config.set("spark.reducer.maxSizeInFlight", "1024m")
-    config.set("spark.es.nodes.wan.only", "false")
+//    config.set("spark.es.nodes.wan.only", "false")
+    config.set("spark.es.nodes.wan.only", "true")
     config.set("spark.reducer.maxMblnFlight", "1024m")
     config.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
     config.set("index.mapper.dynamic","false")
     print(s"spark应用配置参数：${config.getAll.toList}")
-    SparkSession.builder().config(config).appName("es2hive")
-      .config("hive.exec.dynamic.partition",true)
-      .config("hive.exec.dynamic.partition.mode","nonstrict")
-      .enableHiveSupport().getOrCreate()
+    SparkSession.builder().config(config).appName("es2hive").master("local")
+//      .config("hive.exec.dynamic.partition",true)
+//      .config("hive.exec.dynamic.partition.mode","nonstrict")
+//      .enableHiveSupport()
+      .getOrCreate()
   }
 
   def createHiveTableSchema(properties: Properties): (StructType,
@@ -162,7 +183,6 @@ object ES2Hive {
   }
 
 
-
   def readDataFromES(sc: SparkContext, properties: Properties,
                      esMetaDataMap: mutable.LinkedHashMap[String, (String, String, String)],
                      hiveMetaDataMap: mutable.LinkedHashMap[AnyRef, AnyRef]): RDD[Row] = {
@@ -189,10 +209,13 @@ object ES2Hive {
     }
     else{
       val timeArray = writeDataMod.split(',')
-      esQuery = s"""{\"query\":{\"range\":{\"$es2HivePartitionName\":{\"gte\":\"${timeArray.head}\",\"lte\":\"${timeArray.last}\"}}}}"""
+       esQuery = s"""{\"query\":{\"range\":{\"$es2HivePartitionName\":{\"gte\":\"${timeArray.head}\",\"lte\":\"${timeArray.last}\"}}}}"""
       println("esQuery is :"+esQuery)
       esDataRDD = EsSpark.esRDD(sc, esIndexName + "/" + esTypeName,query = esQuery)
     }
+
+
+
     esDataRDD.map(
       { esData: (String, collection.Map[String, AnyRef]) => {
         val esValue: collection.Map[String, AnyRef] = esData._2
@@ -231,6 +254,7 @@ object ES2Hive {
                     val jsonMap: mutable.LinkedHashMap[AnyRef, AnyRef] = elem.asInstanceOf[mutable.LinkedHashMap[AnyRef, AnyRef]]
                     val singleResObj = new JSONObject()
                     for (json <- jsonMap) {
+//                      val esName: String = esColumnName + "." + json._1
                       val esName: String = json._1.toString
                       val esValue: AnyRef = json._2
                       if(esValue!=null){
