@@ -1,9 +1,9 @@
-package com.dtyunxi.saas.service
+
 import java.text.SimpleDateFormat
 import java.util.Properties
 
 import com.alibaba.fastjson.{JSONArray, JSONObject}
-import com.dtyunxi.saas.util.{PropertyUtils, TimeUtils}
+
 import org.apache.log4j.LogManager
 import org.apache.log4j.Logger
 import org.apache.spark.rdd.RDD
