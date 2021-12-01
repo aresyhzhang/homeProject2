@@ -78,7 +78,7 @@ object ES2Hiveback {
     val config = new SparkConf()
 //    config.set("spark.es.nodes.wan.only", "false")
 //    config.set("spark.es.nodes.wan.only", "true")
-//    config.set("es.nodes", "172.21.1.146")
+//    config.set("es.nodes", "")
     config.set("es.nodes",esPropMap.get("esNodes").get)
     config.set("es.port",esPropMap.get("esPort").get)
     config.set("es.scroll.size", "10000") //滑动大小*/
