@@ -1,61 +1,81 @@
 import java.util.Properties
 
-import org.apache.spark.SparkContext
-import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.functions._
+import org.apache.spark.sql.SparkSession
+import org.elasticsearch.spark.rdd.EsSpark
 
 import scala.collection.mutable
+//import org.rogach.scallop.ScallopConf
 
-/**
- * @ Author     ：aresyhzhang
- * @ Date       ：Created in 14:12 2021/11/22
- * @ Description：
- */
-object newEs2Hive {
-
+object order {
   def main(args: Array[String]): Unit = {
     println("scala main args is:"+args.mkString(","))
     val sparkBuilder = SparkSession.builder().config("spark.sql.caseSensitive","true")
-      sparkBuilder.master("local[*]")
+    //    sparkBuilder.master("local[*]")
     val spark: SparkSession = sparkBuilder.appName(this.getClass.getName)
-//      .config("hive.exec.dynamici.partition", "true")
-//      .config("hive.exec.dynamic.partition.mode", "nostrick")
-//      .enableHiveSupport()
+      .config("hive.exec.dynamici.partition", "true")
+      .config("hive.exec.dynamic.partition.mode", "nostrick")
+      .enableHiveSupport()
       .getOrCreate()
+    val esPropMap = new mutable.HashMap[String, String]()
+    esPropMap.put("hiveDataBase",args(1))
+    esPropMap.put("esNodes",args(0).split(":").head)
+    esPropMap.put("esPort",args(0).split(":").last)
+    esPropMap.put("startTime",args(3).split(",").head)
+    esPropMap.put("endTime",args(3).split(",").last)
 
-
-//        val esPropMap = new mutable.HashMap[String, String]()
-//        esPropMap.put("hiveDataBase",args(0))
-//        esPropMap.put("esNodes",args(2).split(":").head)
-//        esPropMap.put("esPort",args(2).split(":").last)
-//        esPropMap.put("startTime",args(3).split(",").head)
-//        esPropMap.put("endTime",args(3).split(",").last)
-//        val esPropArrary: Array[String] = args(1).split(',')
-//       val properties: Properties = PropertyUtils.getFileProperties(esProperties)
-//          import scala.collection.JavaConverters._
-//          esPropMap.put("esIndexName",esIndexName)
-//          properties.putAll(esPropMap.toMap.asJava)
-//          println("read properties is:"+properties)
+    //write-data-mode
+    //2020-10-23
+    var writeDataMode="day"
+    val startTime = args(3).split(",").head.replace("\"","")
+    val endTime = args(3).split(",").last.replace("\"","")
+    val existStartTime = startTime.contains("-")
+    val existEndTime = endTime.contains("-")
+    if(existEndTime && !existStartTime)throw new RuntimeException("must set startTime and endTime,startTime:"+startTime+",endTime:"+endTime)
+    //只考虑传开始时间
+    if(existStartTime){
+      writeDataMode=TimeUtils.stringToTimestamp(startTime,"yyyy-MM-dd")+","
+      if(existEndTime){
+        writeDataMode=writeDataMode+TimeUtils.stringToTimestamp(endTime,"yyyy-MM-dd")
+      }else{
+        writeDataMode=writeDataMode+TimeUtils.timestampToString(TimeUtils.getZeroTimeByAmount())
+      }
+    }
+        var esQuery=""
+        val beforeYesterdayZeroTime: Long = TimeUtils.getZeroTimeByAmount(-2)
+        val todayZeroTime: Long = beforeYesterdayZeroTime+(86400000*2)
+        val es2HivePartitionName="createdTime"
+        if(writeDataMode.equalsIgnoreCase("day")){
+          esQuery = s"""{\"query\":{\"range\":{\"$es2HivePartitionName\":{\"gte\":\"$beforeYesterdayZeroTime\",\"lt\":\"$todayZeroTime\"}}}}"""
+          println("esQuery is :"+esQuery)
+        }
+        else{
+          val timeArray = writeDataMode.split(',')
+          esQuery = s"""{\"query\":{\"range\":{\"$es2HivePartitionName\":{\"gte\":\"${timeArray.head}",\"lt\":\"${timeArray.last}\"}}}}"""
+          println("esQuery is :"+esQuery)
+        }
 
     import spark.sql
+    sql(s"""use ${esPropMap.get("hiveDataBase")}""")
     sql(
       s"""
          |create temporary table ods_es_prod_order
          |using org.elasticsearch.spark.sql
          |options (pushdown 'true',
-         |resource 'order_test2/_doc',
+         |resource '${esPropMap.get("esIndexName")}/_doc',
          |es.nodes.wan.only 'true',
-         |es.nodes '49.234.117.228',
-         |es.port '9200',
-         |es.mapping.id 'id'
+         |es.nodes '${esPropMap.get("esNodes")}',
+         |es.port '${esPropMap.get("esPort")}',
+         |es.mapping.id 'id',
+         |es.query '$esQuery'
          |)
          |""".stripMargin)
     sql("desc ods_es_prod_order").show(1000,false)
 
     println("================")
 
-    val ods_center_es_order_assistant_sql=
+    val ods_center_es_order_assistant=
       s"""
+         |INSERT overwrite TABLE ods_center_es_order_assistant
          |select tenantId as id
          |      ,tenantId as tenant_id
          |      ,order_no as orderid
@@ -69,10 +89,11 @@ object newEs2Hive {
          |      lateral view explode(assistantInfoReqDtos) aird_tbl as aird_arr
          |""".stripMargin
 
-    sql(ods_center_es_order_assistant_sql).show(false)
+    sql(ods_center_es_order_assistant).show(false)
 
-    val ods_center_es_order_pay_sql=
+    val ods_center_es_order_pay=
       """
+        |INSERT overwrite TABLE ods_center_es_order_pay
         |select concat(localorderid,'_',orderpays_arr.paymethod) as id
         |      ,tenantId as tenant_id
         |      ,order_no as orderid
@@ -86,29 +107,29 @@ object newEs2Hive {
         |      from ods_es_prod_order
         |      lateral view explode(orderpays) orderpays_tbl as orderpays_arr
         |""".stripMargin
-    sql(ods_center_es_order_pay_sql).show(false)
+    sql(ods_center_es_order_pay).show(false)
 
-      val ods_center_es_order_activity_sql =
-        s"""
-           |select tenantId as id
-           |      ,tenantId as tenant_id
-           |      ,order_no as orderid
-           |      ,localorderid
-           |      ,thirdActivityReqDtos_arr.activityCode as local_order_id
-           |      ,thirdActivityReqDtos_arr.activityName as activity_name
-           |      ,thirdActivityReqDtos_arr.activityType as activity_type
-           |      ,createdtime as createdtime
-           |      ,cast(from_unixtime(cast(createdtime as bigint),'yyyyMMdd') as int) as dt
-           |      from ods_es_prod_order
-           |      lateral view explode(thirdActivityReqDtos) thirdActivityReqDtos_tbl as thirdActivityReqDtos_arr
-           |""".stripMargin
-    sql(ods_center_es_order_activity_sql).show(false)
+    val ods_center_es_order_activity =
+      s"""
+         |INSERT overwrite TABLE ods_center_es_order_activity
+         |select tenantId as id
+         |      ,tenantId as tenant_id
+         |      ,order_no as orderid
+         |      ,localorderid as local_order_id
+         |      ,thirdActivityReqDtos_arr.activityCode as activity_code
+         |      ,thirdActivityReqDtos_arr.activityName as activity_name
+         |      ,thirdActivityReqDtos_arr.activityType as activity_type
+         |      ,createdtime as createdtime
+         |      ,cast(from_unixtime(cast(createdtime as bigint),'yyyyMMdd') as int) as dt
+         |      from ods_es_prod_order
+         |      lateral view explode(thirdActivityReqDtos) thirdActivityReqDtos_tbl as thirdActivityReqDtos_arr
+         |""".stripMargin
+    sql(ods_center_es_order_activity).show(false)
 
-    val ods_center_es_order_item_sql=
+    val ods_center_es_order_item=
       """
         |with t1 as (
         |select tenantId as id
-        |      ,orderitems_arr.uniqueKey as unique_key
         |      ,tenantId as tenant_id
         |      ,order_no as orderid
         |      ,localorderid
@@ -134,7 +155,6 @@ object newEs2Hive {
         |    )
         |,t2 as (
         |    select id
-        |    ,null as unique_key
         |    ,tenant_id
         |    ,orderid
         |    ,localorderid
@@ -161,12 +181,34 @@ object newEs2Hive {
         |,t3 as (
         |select * from t1 union all select * from t2
         |)
-        |select payamount, item_code, item_id, id, localorderid, discountprice, item_name, price, orderid, quantity, createdtime, sku_id, unique_key, weight, attribute, tenant_id, parent_id, categoryid, item_type, total,dt from t3
+        |INSERT overwrite TABLE ods_center_es_order_item
+        |select  id,
+        | tenant_id,
+        | orderid,
+        | localorderid,
+        | item_type,
+        | item_id,
+        | item_code,
+        | item_name,
+        | sku_id,
+        | categoryid,
+        | quantity,
+        | weight,
+        | price,
+        | discountprice,
+        | total,
+        | payamount,
+        | createdtime,
+        | parent_id,
+        | attribute,
+        | dt
+        | from t3
         |""".stripMargin
-    sql(ods_center_es_order_item_sql).show(false)
+    sql(ods_center_es_order_item).show(false)
 
-    val ods_center_es_order_coupon_sql=
+    val ods_center_es_order_coupon=
       """
+        |INSERT overwrite TABLE ods_center_es_order_coupon
         |select tenantId as id
         |      ,tenantId as tenant_id
         |      ,order_no as orderid
@@ -180,13 +222,13 @@ object newEs2Hive {
         |      from ods_es_prod_order
         |      lateral view explode(ordercoupons) ordercoupons_tbl as ordercoupons_arr
         |""".stripMargin
-    sql(ods_center_es_order_coupon_sql).show(false)
+    sql(ods_center_es_order_coupon).show(false)
 
-    val ods_center_es_order_sql=
+    val ods_center_es_order=
       """
+        |INSERT overwrite TABLE ods_center_es_order
         |select tenantId as id
         |      ,tenantId as tenant_id
-        |      ,order_no as orderid
         |      ,localorderid
         |      ,`shopid`
         |      ,`shopcode`
@@ -236,7 +278,7 @@ object newEs2Hive {
         |      ,cast(from_unixtime(cast(createdtime as bigint),'yyyyMMdd') as int) as dt
         |      from ods_es_prod_order
         |""".stripMargin
-    sql(ods_center_es_order_sql).show(false)
+    sql(ods_center_es_order).show(false)
 
     spark.stop()
   }
