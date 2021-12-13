@@ -1,0 +1,264 @@
+GET _search
+{
+  "query": {
+    "match_all": {}
+  }
+}
+GET zyhtest/_doc/1
+
+
+GET test/_mapping?pretty
+
+
+
+DELETE /test
+
+DELETE /test/_doc/3
+
+PUT /test
+{
+  "mappings": {
+    "_doc":{
+      "properties":{
+        "id":{
+          "type":"keyword"
+        },
+        "age":{
+          "type": "long"
+        },
+        "name":{
+          "type":"text"
+        },
+        "createdtime":{
+           "type": "date",
+           "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis"
+        },
+        "maptest":{
+          "properties":{
+            "v1":{
+              "properties":{
+                "v1son":{"type":"keyword"}
+              }
+            },
+            "v2":{
+              "type":"long"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+PUT /test/_doc/1
+{
+  "id":"id1",
+  "age":23,
+  "name":"zyh",
+  "createdtime" : 1635768264000,
+  "maptest": [
+    {
+      "v1" : {
+        "v1son":"8888"
+      },
+      "v2" : 9999
+    }
+  ]
+}
+
+PUT /test/_doc/1
+{
+  "id":"id1",
+  "age":23,
+  "name":"zyh",
+  "createdtime" : 1635768264000,
+  "maptest": [
+    {
+      "a1" : {
+        "a1son":"aaaaaaa"
+      },
+      "a2" : 111
+    },
+    {
+      "b1" : {
+        "b11son":"bbbbbb"
+      },
+      "b2" : 222
+    }
+  ]
+}
+
+PUT /test/_doc/1
+{
+  "id":"id1",
+  "age":23,
+  "name":"zyh",
+  "createdtime" : 1635768264000,
+  "maptest1": [
+    {
+      "v1" : {
+        "v1son":"1118"
+      },
+      "v2" : 1118
+    },
+    {
+      "v1" : {
+        "v1son":"2228"
+      },
+      "v2" : 2228
+    }
+  ],
+    "maptest2": [
+    {
+      "v1" : {
+        "v1son":"1118"
+      },
+      "v2" : 1118
+    },
+    {
+      "v1" : {
+        "v1son":"2228"
+      },
+      "v2" : 2228
+    }
+  ]
+}
+
+
+PUT /test/_doc/2
+{
+  "id":"id2",
+  "age":23,
+  "name":"zyh",
+  "createdtime" : 1636458119000,
+  "maptest": [
+    {
+      "v1" : {
+        "v1son":"8888"
+      },
+      "v2" : 9999
+    }
+  ]
+}
+
+PUT /test/_doc/3
+{
+  "id":"id3",
+  "age":23,
+  "name":"zyh",
+  "createdtime" : 1635681864000,
+  "maptest": [
+    {
+      "v1" : {
+        "v1son":"8888"
+      },
+      "v2" : 9999
+    },
+     {
+      "v1" : {
+        "v1son":"8888"
+      },
+      "v2" : 9999
+    }
+  ]
+}
+
+GET test/_search
+
+GET test/_search
+{
+  "query": {
+    "range": {
+      "createdtime": {
+        "gte": 1635609600000,
+        "lte": 1635696000000
+      }
+    }
+  }
+}
+
+
+
+POST zyhtest/_create/1
+{
+  "id":1,
+  "name":"zyh"
+}
+
+POST sass/_create/1
+{
+  "id":1,
+  "name":"zyh"
+}
+
+
+PUT /test/testtype/1
+{
+  "first_name":"first_ldd",
+  "createdtime" : 1624935223000,
+  "maptest": [
+    {
+      "id" : "1",
+      "name" : "test"
+    }
+  ]
+}
+
+GET test/_search
+
+PUT /order1/test/1
+{
+ "tenantId" : 1211809272448907264,
+  "instanceId" : 1211809317600589912,
+  "id" : null,
+  "localorderid" : "202106291053435162813670933",
+  "shopid" : "76499936",
+  "shopcode" : "76499936",
+  "shopname" : "0780测试门店",
+  "orderchannel" : "w7_wmall",
+  "extuserid" : null,
+  "usermobile" : "15914962753",
+  "usercardno" : "162400135058403065",
+  "memberid" : 1277869036490160242,
+  "membername" : "P210618-291",
+  "totalamount" : 12.0,
+  "payamount" : 10.0,
+  "usepoint" : 0,
+  "pointamount" : 0.0,
+  "accountamount" : 0.0,
+  "couponamount" : 2.0,
+  "discountamount" : null,
+  "description" : "",
+  "createdtime" : 1624935223000,
+  "deliverytime" : null,
+  "dinnersnumber" : null,
+  "tradeno" : "202106291053435162813670933",
+  "returnordno" : null,
+  "payTime" : null,
+  "other_discount_amount" : 0.0,
+  "shop_discount_amount" : 0.0,
+  "order_no" : null,
+  "channelServiceFee" : 0.0,
+  "memberType" : "0",
+  "extFields" : null,
+  "status" : "SUCCESS",
+  "orderitemlist" : null,
+  "orderpays" : [
+    {
+      "paymethod" : "accountpay",
+      "payname" : "余额",
+      "payamount" : 10.0,
+      "channelServiceFee" : 0
+    }
+  ],
+  "ordercoupons" : [
+    {
+      "coupontempid" : 1278354151489122347,
+      "couponcode" : "1278354151489122347",
+      "couponname" : "满减商家券",
+      "couponamount" : 2.0
+    }
+  ],
+  "assistantInfoReqDtos" : null,
+  "thirdActivityReqDtos" : null
+}

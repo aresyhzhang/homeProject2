@@ -1,0 +1,4 @@
+with t1 as (
+select explode(split(regexp_replace(regexp_replace('[{"website":"www.iteblog.com","name":"zz"},{"website":"carbondata.iteblog.com","name":"carbondata zz"}]', '\\},','\\}\\;'),'\\[|\\]',''),'\\;')) as log
+)
+select get_json_object(log,'$.website') from t1;
